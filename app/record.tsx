@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { Audio } from 'expo-av';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
-import { Alert, StyleSheet, Text, TouchableOpacity, Vibration, View } from 'react-native';
+import { Alert, SafeAreaView, StatusBar, StyleSheet, Text, TouchableOpacity, Vibration, View } from 'react-native';
 import { startRecording, stopRecordingAndSave } from './services/recordingService';
 
 const MIN_RECORDING_TIME = 1000; // 1 second minimum
@@ -113,10 +113,11 @@ export default function RecordScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#007AFF" />
+          <Ionicons name="arrow-back" size={24} color="#6366f1" />
         </TouchableOpacity>
         <Text style={styles.title}>Voice Recorder</Text>
         <View style={{ width: 24 }} />
@@ -131,6 +132,23 @@ export default function RecordScreen() {
         </View>
         
         <Text style={styles.timer}>{fmt(elapsed)}</Text>
+        
+        <View style={styles.waveformContainer}>
+          {[...Array(20)].map((_, i) => (
+            <View
+              key={i}
+              style={[
+                styles.waveformBar,
+                {
+                  height: isRecording 
+                    ? Math.random() * 40 + 10 
+                    : 4,
+                  backgroundColor: isRecording ? '#6366f1' : '#e5e7eb',
+                },
+              ]}
+            />
+          ))}
+        </View>
         
         <View style={styles.buttonContainer}>
           <TouchableOpacity
@@ -154,113 +172,143 @@ export default function RecordScreen() {
           <TouchableOpacity 
             onPress={() => router.back()}
             style={styles.cancelButton}
+            activeOpacity={0.7}
           >
             <Text style={styles.cancelText}>Cancel</Text>
           </TouchableOpacity>
         )}
       </View>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#ffffff',
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: 16,
-    paddingTop: 50,
-    backgroundColor: 'white',
+    padding: 20,
+    paddingTop: 12,
+    backgroundColor: '#ffffff',
     borderBottomWidth: 1,
-    borderBottomColor: '#e0e0e0',
+    borderBottomColor: '#e5e7eb',
   },
   backButton: {
     padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#f3f4f6',
   },
   title: {
-    fontSize: 18,
+    fontSize: 20,
     fontWeight: '600',
-    color: '#000',
+    color: '#111827',
+    letterSpacing: -0.3,
   },
   content: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    padding: 24,
+    padding: 32,
   },
   recordingIndicator: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 32,
-    padding: 12,
-    borderRadius: 20,
-    backgroundColor: 'rgba(0, 0, 0, 0.05)',
+    marginBottom: 40,
+    padding: 16,
+    paddingHorizontal: 24,
+    borderRadius: 24,
+    backgroundColor: '#f8f9fa',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
   recordingActive: {
-    backgroundColor: 'rgba(255, 59, 48, 0.1)',
+    backgroundColor: '#fef2f2',
+    borderColor: '#fecaca',
   },
   recordingDot: {
     width: 12,
     height: 12,
     borderRadius: 6,
-    backgroundColor: '#ff3b30',
-    marginRight: 8,
+    backgroundColor: '#ef4444',
+    marginRight: 12,
     opacity: 0,
   },
   recordingPulse: {
     opacity: 1,
+    shadowColor: '#ef4444',
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6,
+    shadowRadius: 4,
   },
   recordingText: {
     fontSize: 16,
-    color: '#333',
+    color: '#374151',
     fontWeight: '500',
   },
   timer: {
-    fontSize: 48,
-    fontWeight: '300',
+    fontSize: 64,
+    fontWeight: '200',
     fontVariant: ['tabular-nums'],
-    color: '#000',
-    marginBottom: 48,
+    color: '#111827',
+    marginBottom: 40,
+    letterSpacing: -2,
+  },
+  waveformContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    height: 60,
+    marginBottom: 40,
+    gap: 3,
+  },
+  waveformBar: {
+    width: 4,
+    borderRadius: 2,
+    backgroundColor: '#e5e7eb',
   },
   buttonContainer: {
-    marginBottom: 32,
+    marginBottom: 40,
     alignItems: 'center',
   },
   recButton: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: '#007AFF',
+    width: 140,
+    height: 140,
+    borderRadius: 70,
+    backgroundColor: '#6366f1',
     justifyContent: 'center',
     alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
+    elevation: 8,
+    shadowColor: '#6366f1',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
   },
   recordingButton: {
-    backgroundColor: '#ff3b30',
+    backgroundColor: '#ef4444',
     transform: [{ scale: 1.05 }],
+    shadowColor: '#ef4444',
   },
   recText: {
     color: 'white',
     fontSize: 16,
     fontWeight: '600',
     marginTop: 8,
-    letterSpacing: 1,
+    letterSpacing: 2,
   },
   cancelButton: {
-    padding: 12,
+    padding: 16,
     paddingHorizontal: 32,
-    borderRadius: 8,
+    borderRadius: 12,
+    backgroundColor: '#f3f4f6',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
   },
   cancelText: {
-    color: '#666',
+    color: '#6b7280',
     fontSize: 16,
     fontWeight: '500',
   },

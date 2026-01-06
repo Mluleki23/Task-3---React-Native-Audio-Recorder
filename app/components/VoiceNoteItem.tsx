@@ -85,63 +85,175 @@ export default function VoiceNoteItem({ note, onDelete, onRename }: Props) {
     } catch {}
   };
   return (
-    <View style={styles.row}>
-      <View style={{ flex: 1 }}>
-        <Text style={styles.name}>{note.name}</Text>
-        <Text style={styles.meta}>
-          {new Date(note.createdAt).toLocaleString()} • {fmt(note.duration)}
-        </Text>
-      </View>
-
-      <View style={{ alignItems: 'center', marginRight: 8 }}>
-        <TouchableOpacity
-          style={styles.iconButton}
-          onPress={toggle}
-          accessibilityLabel={playing ? 'Pause' : 'Play'}
-        >
-          <Ionicons name={playing ? 'pause' : 'play'} size={20} color="#007affe" />
-        </TouchableOpacity>
-        <Text style={{ fontSize: 12, color: '#666' }}>{formatTime(position)}</Text>
-      </View>
-
-      <View style={{ width: 80, marginRight: 8 }}>
-        <View style={{ height: 6, backgroundColor: '#eee', borderRadius: 4, overflow: 'hidden', flexDirection: 'row' }}>
-          <View style={{ flex: note.duration ? (position / note.duration) : 0, backgroundColor: '#007affe' }} />
-          <View style={{ flex: 1 - (note.duration ? (position / note.duration) : 0), backgroundColor: '#eee' }} />
+    <View style={styles.card}>
+      <View style={styles.cardContent}>
+        <View style={styles.noteInfo}>
+          <Text style={styles.name}>{note.name}</Text>
+          <Text style={styles.meta}>
+            {new Date(note.createdAt).toLocaleDateString()} • {fmt(note.duration)}
+          </Text>
         </View>
-        <Text style={{ fontSize: 12, color: '#666', textAlign: 'center' }}>{formatTime(note.duration)}</Text>
+
+        <View style={styles.playbackSection}>
+          <TouchableOpacity
+            style={styles.playButton}
+            onPress={toggle}
+            accessibilityLabel={playing ? 'Pause' : 'Play'}
+            activeOpacity={0.7}
+          >
+            <View style={styles.playIcon}>
+              <Ionicons name={playing ? 'pause' : 'play'} size={20} color="white" />
+            </View>
+          </TouchableOpacity>
+          <Text style={styles.positionText}>{formatTime(position)}</Text>
+        </View>
+
+        <View style={styles.progressSection}>
+          <View style={styles.progressBar}>
+            <View style={styles.progressBackground}>
+              <View 
+                style={[
+                  styles.progressFill, 
+                  { width: `${note.duration ? (position / note.duration) * 100 : 0}%` }
+                ]} 
+              />
+            </View>
+          </View>
+          <Text style={styles.durationText}>{formatTime(note.duration)}</Text>
+        </View>
+
+        <View style={styles.actions}>
+          <TouchableOpacity 
+            style={styles.actionButton} 
+            onPress={() => cycleSpeed()} 
+            accessibilityLabel="Change playback speed"
+            activeOpacity={0.7}
+          >
+            <Text style={styles.speedText}>{speed}x</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionButton} 
+            onPress={() => onRename()} 
+            accessibilityLabel="Rename recording"
+            activeOpacity={0.7}
+          >
+            <Ionicons name="pencil-outline" size={18} color="#6366f1" />
+          </TouchableOpacity>
+
+          <TouchableOpacity 
+            style={styles.actionButton} 
+            onPress={() => onDelete(note.id)} 
+            accessibilityLabel="Delete recording"
+            activeOpacity={0.7}
+          >
+            <Ionicons name="trash-outline" size={18} color="#ef4444" />
+          </TouchableOpacity>
+        </View>
       </View>
-
-      <TouchableOpacity style={[styles.small]} onPress={() => cycleSpeed()} accessibilityLabel="Change playback speed">
-        <Text style={{ color: '#007affe' }}>{speed}x</Text>
-      </TouchableOpacity>
-
-      <TouchableOpacity style={[styles.small]} onPress={() => onRename()} accessibilityLabel="Rename recording">
-        <Ionicons name="pencil" size={18} color="#007affe" />
-      </TouchableOpacity>
-
-      <TouchableOpacity style={[styles.small]} onPress={() => onDelete(note.id)} accessibilityLabel="Delete recording">
-        <Ionicons name="trash" size={18} color="#ff3b30" />
-      </TouchableOpacity>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  row: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#eee",
+  card: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    marginBottom: 12,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: '#f3f4f6',
   },
-  name: { fontSize: 16, fontWeight: "500" },
-  meta: { color: "#666", marginTop: 4 },
-  iconButton: { padding: 8, marginHorizontal: 8 },
-  button: { padding: 8, marginHorizontal: 8 },
-  btnText: { fontSize: 18 },
-  small: { padding: 8 },
-  smallText: { color: "#007affe" },
-  progressBackground: { height: 6, backgroundColor: '#eee', borderRadius: 4, overflow: 'hidden' },
-  progressFill: { height: 6, backgroundColor: '#007affe' },
+  cardContent: {
+    padding: 16,
+  },
+  noteInfo: {
+    marginBottom: 12,
+  },
+  name: { 
+    fontSize: 16, 
+    fontWeight: '600',
+    color: '#111827',
+    marginBottom: 4,
+  },
+  meta: { 
+    color: '#6b7280', 
+    fontSize: 13,
+    fontWeight: '400',
+  },
+  playbackSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  playButton: {
+    marginRight: 12,
+  },
+  playIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#6366f1',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#6366f1',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  positionText: {
+    fontSize: 13,
+    color: '#374151',
+    fontWeight: '500',
+    fontVariant: ['tabular-nums'],
+  },
+  progressSection: {
+    marginBottom: 12,
+  },
+  progressBar: {
+    marginBottom: 4,
+  },
+  progressBackground: {
+    height: 6,
+    backgroundColor: '#f3f4f6',
+    borderRadius: 3,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    backgroundColor: '#6366f1',
+    borderRadius: 3,
+  },
+  durationText: {
+    fontSize: 12,
+    color: '#9ca3af',
+    textAlign: 'right',
+    fontVariant: ['tabular-nums'],
+  },
+  actions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    alignItems: 'center',
+    gap: 8,
+  },
+  actionButton: {
+    padding: 8,
+    borderRadius: 8,
+    backgroundColor: '#f8f9fa',
+    minWidth: 36,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  speedText: {
+    color: '#6366f1',
+    fontWeight: '600',
+    fontSize: 12,
+    minWidth: 28,
+    textAlign: 'center',
+  },
 });
