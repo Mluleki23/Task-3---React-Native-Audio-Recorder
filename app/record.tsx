@@ -66,36 +66,49 @@ export default function RecordScreen() {
       const continueRecording = await new Promise<boolean>((resolve) => {
         Alert.alert(
           'Short Recording',
-          'The recording is very short. Do you want to continue recording?',
+          'The recording is very short. Do you want to keep it or continue recording?',
           [
             { text: 'Delete', onPress: () => resolve(false), style: 'destructive' },
-            { text: 'Continue', onPress: () => resolve(true) }
+            { text: 'Keep', onPress: () => resolve(true) },
+            { text: 'Continue', onPress: () => resolve(false) }
           ]
         );
       });
       
-      if (continueRecording) return; // Continue recording
+      if (!continueRecording) {
+        // User chose to delete or continue recording (both result in deletion)
+        try {
+          await recordingRef.current.stopAndUnloadAsync();
+          console.log('Short recording discarded');
+        } catch (err) {
+          console.error('Error discarding recording:', err);
+        }
+        
+        // Cleanup and navigate back
+        clearInterval(timerRef.current as any);
+        recordingRef.current = null;
+        setIsRecording(false);
+        router.back();
+        return;
+      }
       
-      // User chose to delete the short recording
-      try {
-        await recordingRef.current.stopAndUnloadAsync();
-      } catch (err) {
-        console.error('Error discarding recording:', err);
-      }
-    } else {
-      // Normal recording stop
-      try {
-        await stopRecordingAndSave(recordingRef.current);
-        Vibration.vibrate(100); // Success haptic feedback
-      } catch (err) {
-        console.error('Stop failed', err);
-        Alert.alert(
-          'Save Failed',
-          'Failed to save the recording. Please try again.',
-          [{ text: 'OK' }]
-        );
-        return; // Don't navigate if save failed
-      }
+      // User chose to keep the short recording, continue with save process
+    }
+    
+    // Normal recording save process
+    try {
+      console.log('Attempting to save recording...');
+      const savedNote = await stopRecordingAndSave(recordingRef.current);
+      console.log('Recording saved successfully:', savedNote);
+      Vibration.vibrate(100); // Success haptic feedback
+    } catch (err) {
+      console.error('Save failed:', err);
+      Alert.alert(
+        'Save Failed',
+        `Failed to save the recording: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again.`,
+        [{ text: 'OK' }]
+      );
+      return; // Don't navigate if save failed
     }
     
     // Cleanup and navigate back
