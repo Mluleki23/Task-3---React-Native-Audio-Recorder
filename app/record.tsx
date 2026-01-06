@@ -91,11 +91,9 @@ export default function RecordScreen() {
         router.back();
         return;
       }
-      
-      // User chose to keep the short recording, continue with save process
     }
     
-    // Normal recording save process
+    // Normal recording save process (for both normal and kept short recordings)
     try {
       console.log('Attempting to save recording...');
       const savedNote = await stopRecordingAndSave(recordingRef.current);
@@ -105,7 +103,7 @@ export default function RecordScreen() {
       console.error('Save failed:', err);
       Alert.alert(
         'Save Failed',
-        `Failed to save the recording: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again.`,
+        `Failed to save recording: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again.`,
         [{ text: 'OK' }]
       );
       return; // Don't navigate if save failed

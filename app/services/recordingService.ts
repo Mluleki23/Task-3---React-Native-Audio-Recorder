@@ -13,48 +13,115 @@ export type VoiceNote = {
 export const SETTINGS_KEY = 'RECORDER_SETTINGS_V1';
 const STORAGE_KEY = "VOICE_NOTES_V1";
 
-function getRecordingsDir() {
-  const base =
-    (FileSystem as any).documentDirectory ??
-    (FileSystem as any).cacheDirectory ??
-    "";
-  return `${base}recordings/`;
+async function getRecordingsDir() {
+  console.log('Getting recordings directory...');
+  
+  // Try cache directory first (most permissive)
+  const cacheDir = (FileSystem as any).cacheDirectory;
+  if (cacheDir) {
+    try {
+      const testDir = `${cacheDir}recordings/`;
+      console.log(`Testing cache directory: ${testDir}`);
+      
+      // Test basic access
+      await FileSystem.getInfoAsync(cacheDir);
+      const testFile = `${testDir}test-${Date.now()}.tmp`;
+      await FileSystem.writeAsStringAsync(testFile, 'test');
+      await FileSystem.deleteAsync(testFile, { idempotent: true });
+      
+      console.log(`Successfully using cache directory: ${testDir}`);
+      return testDir;
+    } catch (cacheErr) {
+      console.warn('Cache directory test failed:', cacheErr);
+    }
+  }
+  
+  // Try document directory as fallback
+  const documentDir = (FileSystem as any).documentDirectory;
+  if (documentDir) {
+    try {
+      const testDir = `${documentDir}recordings/`;
+      console.log(`Testing document directory: ${testDir}`);
+      
+      await FileSystem.getInfoAsync(documentDir);
+      const testFile = `${testDir}test-${Date.now()}.tmp`;
+      await FileSystem.writeAsStringAsync(testFile, 'test');
+      await FileSystem.deleteAsync(testFile, { idempotent: true });
+      
+      console.log(`Successfully using document directory: ${testDir}`);
+      return testDir;
+    } catch (docErr) {
+      console.warn('Document directory test failed:', docErr);
+    }
+  }
+  
+  // If both fail, provide a simple error without throwing
+  console.error('Unable to access standard file system directories');
+  // Return a fallback path that might work with in-memory storage
+  const fallbackPath = 'temp_recordings/';
+  console.log(`Using fallback path: ${fallbackPath}`);
+  return fallbackPath;
 }
 
 export async function ensureRecordingsDir() {
-  const dir = getRecordingsDir();
-  console.log('Ensuring recordings directory exists:', dir);
-  
-  // Check if we can access the base directory
-  const baseDir = (FileSystem as any).documentDirectory ?? (FileSystem as any).cacheDirectory ?? "";
-  console.log('Base directory:', baseDir);
-  
   try {
-    const baseInfo = await FileSystem.getInfoAsync(baseDir);
-    console.log('Base directory accessible:', baseInfo.exists);
+    let dir;
+    try {
+      dir = await getRecordingsDir();
+      console.log('Ensuring recordings directory exists:', dir);
+    } catch (dirErr) {
+      console.error('Failed to get recordings directory:', dirErr);
+      throw new Error('Cannot access file system base directory');
+    }
+    
+    // Handle fallback path case
+    if (dir === 'temp_recordings/') {
+      console.warn('Using fallback in-memory path, recordings may not persist');
+      // For fallback path, we'll try to use cache directly
+      try {
+        const cacheDir = (FileSystem as any).cacheDirectory;
+        if (cacheDir) {
+          const fallbackDir = `${cacheDir}recordings/`;
+          console.log('Trying cache fallback:', fallbackDir);
+          
+          const info = await FileSystem.getInfoAsync(fallbackDir);
+          if (!info.exists) {
+            await FileSystem.makeDirectoryAsync(fallbackDir, { intermediates: true });
+            console.log('Created cache fallback directory');
+          }
+          return fallbackDir;
+        }
+      } catch (fallbackErr) {
+        console.error('Cache fallback also failed:', fallbackErr);
+      }
+      
+      throw new Error('Cannot access persistent storage. Recordings may not be saved permanently.');
+    }
+    
+    const info = await FileSystem.getInfoAsync(dir);
+    if (!info.exists) {
+      console.log('Creating recordings directory...');
+      await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
+      console.log('Recordings directory created successfully');
+    } else {
+      console.log('Recordings directory already exists');
+    }
+    
+    // Verify directory is writable
+    try {
+      const testFile = `${dir}test-write-${Date.now()}.tmp`;
+      await FileSystem.writeAsStringAsync(testFile, 'test');
+      await FileSystem.deleteAsync(testFile, { idempotent: true });
+      console.log('Directory is writable');
+    } catch (err) {
+      console.error('Directory is not writable:', err);
+      throw new Error('Recordings directory is not writable');
+    }
+    
+    return dir;
   } catch (err) {
-    console.error('Cannot access base directory:', err);
-    throw new Error('Cannot access file system base directory');
-  }
-  
-  const info = await FileSystem.getInfoAsync(dir);
-  if (!info.exists) {
-    console.log('Creating recordings directory...');
-    await FileSystem.makeDirectoryAsync(dir, { intermediates: true });
-    console.log('Recordings directory created successfully');
-  } else {
-    console.log('Recordings directory already exists');
-  }
-  
-  // Verify directory is writable
-  try {
-    const testFile = `${dir}test-write-${Date.now()}.tmp`;
-    await FileSystem.writeAsStringAsync(testFile, 'test');
-    await FileSystem.deleteAsync(testFile, { idempotent: true });
-    console.log('Directory is writable');
-  } catch (err) {
-    console.error('Directory is not writable:', err);
-    throw new Error('Recordings directory is not writable');
+    console.error('Failed to ensure recordings directory:', err);
+    throw new Error(`Failed to create recordings directory: ${err instanceof Error ? err.message : 'Unknown error'}`);
   }
 }
 
@@ -119,18 +186,31 @@ export async function stopRecordingAndSave(
 ): Promise<VoiceNote> {
   try {
     console.log('Stopping recording...');
-    await recording.stopAndUnloadAsync();
+    
+    // Check if recording is still active before stopping
+    const recordingStatus = await recording.getStatusAsync();
+    console.log('Recording status before stop:', recordingStatus);
+    
+    // Try to stop and unload, but handle if already stopped
+    try {
+      await recording.stopAndUnloadAsync();
+      console.log('Recording stopped and unloaded');
+    } catch (stopErr) {
+      console.log('Recording might already be stopped:', stopErr);
+      // If already stopped, just continue to get URI
+    }
+    
     const rawUri = recording.getURI();
     if (!rawUri) {
       throw new Error("No recording URI available");
     }
-    console.log('Recording stopped, raw URI:', rawUri);
+    console.log('Recording URI:', rawUri);
 
     await ensureRecordingsDir();
 
     const id = `${Date.now()}`;
     const filename = `${id}.m4a`;
-    const dest = `${getRecordingsDir()}${filename}`;
+    const dest = `${await getRecordingsDir()}${filename}`;
     console.log('Moving recording from', rawUri, 'to', dest);
 
     // Move file to permanent location
@@ -231,9 +311,9 @@ export async function clearAllNotes() {
   await AsyncStorage.removeItem(STORAGE_KEY);
   // optionally remove folder
   try {
-    const info = await FileSystem.getInfoAsync(getRecordingsDir());
+    const info = await FileSystem.getInfoAsync(await getRecordingsDir());
     if (info.exists)
-      await FileSystem.deleteAsync(getRecordingsDir(), { idempotent: true });
+      await FileSystem.deleteAsync(await getRecordingsDir(), { idempotent: true });
   } catch {
     // ignore
   }
@@ -241,14 +321,14 @@ export async function clearAllNotes() {
 
 export async function exportBackup(): Promise<string> {
   const notes = await loadNotes();
-  const file = `${getRecordingsDir()}backup-${Date.now()}.json`;
+  const file = `${await getRecordingsDir()}backup-${Date.now()}.json`;
   await ensureRecordingsDir();
   await FileSystem.writeAsStringAsync(file, JSON.stringify(notes, null, 2));
   return file;
 }
 
 // Debug function to help identify issues
-export async async function debugRecordingSystem() {
+export async function debugRecordingSystem() {
   console.log('=== Recording System Debug ===');
   
   try {
@@ -256,7 +336,7 @@ export async async function debugRecordingSystem() {
     const baseDir = (FileSystem as any).documentDirectory ?? (FileSystem as any).cacheDirectory ?? "";
     console.log('Base directory:', baseDir);
     
-    const recordingsDir = getRecordingsDir();
+    const recordingsDir = await getRecordingsDir();
     console.log('Recordings directory:', recordingsDir);
     
     const dirInfo = await FileSystem.getInfoAsync(recordingsDir);
