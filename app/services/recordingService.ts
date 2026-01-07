@@ -10,6 +10,16 @@ export type VoiceNote = {
   createdAt: number;
 };
 
+export type RecordingState = 'idle' | 'recording' | 'paused' | 'stopped';
+
+export interface RecordingSession {
+  recording: Audio.Recording;
+  state: RecordingState;
+  startTime?: number;
+  pausedDuration?: number;
+  lastPauseTime?: number;
+}
+
 const STORAGE_KEY = "VOICE_NOTES_V1";
 export const SETTINGS_KEY = "RECORDER_SETTINGS_V1";
 
@@ -59,14 +69,16 @@ export async function requestAudioPermissions() {
 }
 
 /* ------------------------------------------------------------------ */
-/* Recording */
+/* Recording Controls */
 /* ------------------------------------------------------------------ */
+
+let currentRecordingSession: RecordingSession | null = null;
 
 export async function startRecording(
   options?: { quality?: "high" | "low" }
-): Promise<Audio.Recording> {
+): Promise<RecordingSession> {
   await requestAudioPermissions();
-  await ensureRecordingsDir(); // 🔥 REQUIRED ON ANDROID
+  await ensureRecordingsDir();
 
   const preset =
     options?.quality === "low"
@@ -77,7 +89,71 @@ export async function startRecording(
   await recording.prepareToRecordAsync(preset);
   await recording.startAsync();
 
-  return recording;
+  currentRecordingSession = {
+    recording,
+    state: 'recording',
+    startTime: Date.now(),
+    pausedDuration: 0,
+  };
+
+  return currentRecordingSession;
+}
+
+export async function pauseRecording(): Promise<void> {
+  if (!currentRecordingSession || currentRecordingSession.state !== 'recording') {
+    throw new Error('No active recording to pause');
+  }
+
+  try {
+    await currentRecordingSession.recording.pauseAsync();
+    currentRecordingSession.state = 'paused';
+    currentRecordingSession.lastPauseTime = Date.now();
+  } catch (error) {
+    throw new Error('Failed to pause recording');
+  }
+}
+
+export async function resumeRecording(): Promise<void> {
+  if (!currentRecordingSession || currentRecordingSession.state !== 'paused') {
+    throw new Error('No paused recording to resume');
+  }
+
+  try {
+    await currentRecordingSession.recording.startAsync();
+    currentRecordingSession.state = 'recording';
+    
+    if (currentRecordingSession.lastPauseTime) {
+      const pauseDuration = Date.now() - currentRecordingSession.lastPauseTime;
+      currentRecordingSession.pausedDuration = (currentRecordingSession.pausedDuration || 0) + pauseDuration;
+      currentRecordingSession.lastPauseTime = undefined;
+    }
+  } catch (error) {
+    throw new Error('Failed to resume recording');
+  }
+}
+
+export function getCurrentRecordingSession(): RecordingSession | null {
+  return currentRecordingSession;
+}
+
+export function getRecordingState(): RecordingState {
+  return currentRecordingSession?.state || 'idle';
+}
+
+export function getRecordingDuration(): number {
+  if (!currentRecordingSession || !currentRecordingSession.startTime) {
+    return 0;
+  }
+
+  const elapsed = Date.now() - currentRecordingSession.startTime;
+  const totalPaused = currentRecordingSession.pausedDuration || 0;
+  
+  if (currentRecordingSession.state === 'paused' && currentRecordingSession.lastPauseTime) {
+    const currentPause = Date.now() - currentRecordingSession.lastPauseTime;
+    return elapsed - totalPaused - currentPause;
+  }
+  
+  return elapsed - totalPaused;
 }
 
 /* ------------------------------------------------------------------ */
@@ -85,15 +161,24 @@ export async function startRecording(
 /* ------------------------------------------------------------------ */
 
 export async function stopRecordingAndSave(
-  recording: Audio.Recording,
   displayName?: string
 ): Promise<VoiceNote> {
+  if (!currentRecordingSession) {
+    throw new Error('No active recording to stop');
+  }
+
   console.log("Attempting to save recording...");
 
-  await recording.stopAndUnloadAsync();
+  // If recording is paused, resume it briefly to ensure proper finalization
+  if (currentRecordingSession.state === 'paused') {
+    await currentRecordingSession.recording.startAsync();
+    await new Promise(resolve => setTimeout(resolve, 100)); // Small delay
+  }
+
+  await currentRecordingSession.recording.stopAndUnloadAsync();
   console.log("Recording stopped and unloaded");
 
-  const rawUri = recording.getURI();
+  const rawUri = currentRecordingSession.recording.getURI();
   if (!rawUri) {
     throw new Error("Recording URI missing");
   }
@@ -131,7 +216,35 @@ export async function stopRecordingAndSave(
   await saveNote(note);
   console.log("Recording saved:", note);
 
+  // Clear the current session
+  currentRecordingSession = null;
+
   return note;
+}
+
+export async function saveCurrentRecording(displayName?: string): Promise<VoiceNote> {
+  return stopRecordingAndSave(displayName);
+}
+
+export async function cancelRecording(): Promise<void> {
+  if (!currentRecordingSession) {
+    return;
+  }
+
+  try {
+    if (currentRecordingSession.state === 'recording' || currentRecordingSession.state === 'paused') {
+      await currentRecordingSession.recording.stopAndUnloadAsync();
+      
+      const rawUri = currentRecordingSession.recording.getURI();
+      if (rawUri) {
+        await FileSystem.deleteAsync(rawUri, { idempotent: true });
+      }
+    }
+  } catch (error) {
+    console.warn('Error during recording cancellation:', error);
+  } finally {
+    currentRecordingSession = null;
+  }
 }
 
 /* ------------------------------------------------------------------ */

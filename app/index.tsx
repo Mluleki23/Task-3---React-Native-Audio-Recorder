@@ -38,7 +38,7 @@ export default function Index() {
   }, [isFocused, load]);
 
   const filtered = notes.filter((n) =>
-    n.name.toLowerCase().includes(query.toLowerCase())
+    typeof n.name === 'string' && n.name.toLowerCase().includes(query.toLowerCase())
   );
 
   const [renameVisible, setRenameVisible] = React.useState(false);

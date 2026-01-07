@@ -1,16 +1,22 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Audio } from 'expo-av';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, SafeAreaView, StatusBar, StyleSheet, Text, TouchableOpacity, Vibration, View } from 'react-native';
-import { startRecording, stopRecordingAndSave } from './services/recordingService';
+import {
+    cancelRecording,
+    getRecordingDuration,
+    pauseRecording,
+    RecordingSession,
+    resumeRecording,
+    startRecording,
+    stopRecordingAndSave
+} from './services/recordingService';
 
 const MIN_RECORDING_TIME = 1000; // 1 second minimum
 
 export default function RecordScreen() {
   const router = useRouter();
-  const recordingRef = useRef<Audio.Recording | null>(null);
-  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSession, setRecordingSession] = useState<RecordingSession | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [isPulsing, setIsPulsing] = useState(false);
   const timerRef = useRef<number | null>(null);
@@ -18,7 +24,7 @@ export default function RecordScreen() {
   
   // Pulsing animation effect for recording state
   useEffect(() => {
-    if (!isRecording) {
+    if (!recordingSession || recordingSession.state !== 'recording') {
       setIsPulsing(false);
       return;
     }
@@ -28,21 +34,32 @@ export default function RecordScreen() {
     }, 500);
     
     return () => clearInterval(interval);
-  }, [isRecording]);
+  }, [recordingSession]);
+
+  // Update elapsed time
+  useEffect(() => {
+    if (!recordingSession || recordingSession.state !== 'recording') {
+      return;
+    }
+
+    timerRef.current = setInterval(() => {
+      setElapsed(getRecordingDuration());
+    }, 100) as unknown as number;
+
+    return () => {
+      if (timerRef.current) {
+        clearInterval(timerRef.current);
+      }
+    };
+  }, [recordingSession]);
 
   const start = async () => {
     try {
       // Request permissions and start recording
-      const rec = await startRecording();
-      recordingRef.current = rec;
+      const session = await startRecording();
+      setRecordingSession(session);
       startTimeRef.current = Date.now();
-      setIsRecording(true);
       setElapsed(0);
-      
-      // Start timer for recording duration
-      timerRef.current = setInterval(() => {
-        setElapsed(prev => prev + 500); // Update every 500ms for smoother animation
-      }, 500) as unknown as number;
       
       // Provide haptic feedback
       Vibration.vibrate(50);
@@ -56,8 +73,32 @@ export default function RecordScreen() {
     }
   };
 
+  const pause = async () => {
+    if (!recordingSession) return;
+    
+    try {
+      await pauseRecording();
+      setRecordingSession({ ...recordingSession, state: 'paused' });
+      Vibration.vibrate(30);
+    } catch (err) {
+      console.error('Pause failed', err);
+    }
+  };
+
+  const resume = async () => {
+    if (!recordingSession) return;
+    
+    try {
+      await resumeRecording();
+      setRecordingSession({ ...recordingSession, state: 'recording' });
+      Vibration.vibrate(30);
+    } catch (err) {
+      console.error('Resume failed', err);
+    }
+  };
+
   const stop = async () => {
-    if (!recordingRef.current) return;
+    if (!recordingSession) return;
     
     const recordingTime = Date.now() - startTimeRef.current;
     
@@ -77,17 +118,12 @@ export default function RecordScreen() {
       
       if (!continueRecording) {
         // User chose to delete or continue recording (both result in deletion)
-        try {
-          await recordingRef.current.stopAndUnloadAsync();
-          console.log('Short recording discarded');
-        } catch (err) {
-          console.error('Error discarding recording:', err);
-        }
+        await cancelRecording();
+        console.log('Short recording discarded');
         
         // Cleanup and navigate back
         clearInterval(timerRef.current as any);
-        recordingRef.current = null;
-        setIsRecording(false);
+        setRecordingSession(null);
         router.back();
         return;
       }
@@ -96,7 +132,7 @@ export default function RecordScreen() {
     // Normal recording save process (for both normal and kept short recordings)
     try {
       console.log('Attempting to save recording...');
-      const savedNote = await stopRecordingAndSave(recordingRef.current);
+      const savedNote = await stopRecordingAndSave();
       console.log('Recording saved successfully:', savedNote);
       Vibration.vibrate(100); // Success haptic feedback
     } catch (err) {
@@ -111,9 +147,31 @@ export default function RecordScreen() {
     
     // Cleanup and navigate back
     clearInterval(timerRef.current as any);
-    recordingRef.current = null;
-    setIsRecording(false);
+    setRecordingSession(null);
     router.back();
+  };
+
+  const save = async () => {
+    if (!recordingSession) return;
+    
+    try {
+      console.log('Saving current recording...');
+      const savedNote = await stopRecordingAndSave();
+      console.log('Recording saved successfully:', savedNote);
+      Vibration.vibrate(100);
+      
+      // Cleanup and navigate back
+      clearInterval(timerRef.current as any);
+      setRecordingSession(null);
+      router.back();
+    } catch (err) {
+      console.error('Save failed:', err);
+      Alert.alert(
+        'Save Failed',
+        `Failed to save recording: ${err instanceof Error ? err.message : 'Unknown error'}. Please try again.`,
+        [{ text: 'OK' }]
+      );
+    }
   };
 
   const fmt = (ms: number) => {
@@ -122,6 +180,10 @@ export default function RecordScreen() {
     const sec = s % 60;
     return `${m}:${sec.toString().padStart(2, '0')}`;
   };
+
+  const isRecording = recordingSession?.state === 'recording';
+  const isPaused = recordingSession?.state === 'paused';
+  const hasRecording = recordingSession !== null;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -135,10 +197,10 @@ export default function RecordScreen() {
       </View>
       
       <View style={styles.content}>
-        <View style={[styles.recordingIndicator, isRecording && styles.recordingActive]}>
+        <View style={[styles.recordingIndicator, hasRecording && styles.recordingActive]}>
           <View style={[styles.recordingDot, isPulsing && styles.recordingPulse]} />
           <Text style={styles.recordingText}>
-            {isRecording ? 'Recording...' : 'Ready to record'}
+            {isRecording ? 'Recording...' : isPaused ? 'Paused' : 'Ready to record'}
           </Text>
         </View>
         
@@ -162,24 +224,53 @@ export default function RecordScreen() {
         </View>
         
         <View style={styles.buttonContainer}>
-          <TouchableOpacity
-            onPress={isRecording ? stop : start}
-            style={[styles.recButton, isRecording && styles.recordingButton]}
-            accessibilityLabel={isRecording ? 'Stop recording' : 'Start recording'}
-            activeOpacity={0.8}
-          >
-            <Ionicons 
-              name={isRecording ? 'stop' : 'mic'}
-              size={32} 
-              color="white" 
-            />
-            <Text style={styles.recText}>
-              {isRecording ? 'STOP' : 'RECORD'}
-            </Text>
-          </TouchableOpacity>
+          {!hasRecording ? (
+            <TouchableOpacity
+              onPress={start}
+              style={styles.recButton}
+              accessibilityLabel='Start recording'
+              activeOpacity={0.8}
+            >
+              <Ionicons name="mic" size={32} color="white" />
+              <Text style={styles.recText}>RECORD</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={styles.controlButtons}>
+              <TouchableOpacity
+                onPress={isRecording ? pause : resume}
+                style={[styles.controlButton, isRecording ? styles.pauseButton : styles.resumeButton]}
+                accessibilityLabel={isRecording ? 'Pause recording' : 'Resume recording'}
+                activeOpacity={0.8}
+              >
+                <Ionicons 
+                  name={isRecording ? 'pause' : 'play'}
+                  size={24} 
+                  color="white" 
+                />
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                onPress={save}
+                style={[styles.controlButton, styles.saveButton]}
+                accessibilityLabel='Save recording'
+                activeOpacity={0.8}
+              >
+                <Ionicons name="save" size={24} color="white" />
+              </TouchableOpacity>
+              
+              <TouchableOpacity
+                onPress={stop}
+                style={[styles.controlButton, styles.stopButton]}
+                accessibilityLabel='Stop recording'
+                activeOpacity={0.8}
+              >
+                <Ionicons name="stop" size={24} color="white" />
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
         
-        {!isRecording && (
+        {!hasRecording && (
           <TouchableOpacity 
             onPress={() => router.back()}
             style={styles.cancelButton}
@@ -322,5 +413,39 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     fontSize: 16,
     fontWeight: '500',
+  },
+  controlButtons: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 16,
+  },
+  controlButton: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  pauseButton: {
+    backgroundColor: '#f59e0b',
+    shadowColor: '#f59e0b',
+  },
+  resumeButton: {
+    backgroundColor: '#10b981',
+    shadowColor: '#10b981',
+  },
+  saveButton: {
+    backgroundColor: '#6366f1',
+    shadowColor: '#6366f1',
+  },
+  stopButton: {
+    backgroundColor: '#ef4444',
+    shadowColor: '#ef4444',
   },
 });
