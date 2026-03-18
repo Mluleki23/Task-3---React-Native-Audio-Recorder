@@ -355,8 +355,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
   },
   cancelModalText: {
-    color: "#6b7280",
-    fontWeight: "500",
+    color: "#ef4444",
+    fontWeight: "600",
     fontSize: 16,
   },
   saveModalButton: {
